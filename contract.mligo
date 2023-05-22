@@ -18,6 +18,7 @@
 // To prevent griefing the beneficiary, refunds before the resolution
 // are on a 2 hour delay: first call to %get_refund initiates the timer,
 // and the next call after the delay performs the refund.
+// After resolution, refunds are always instantaneous.
 
 type status = 
 | Ongoing
@@ -41,24 +42,30 @@ type parameter =
 
 type return = operation list * storage
 
-let give_refund (sender : address) (_amount : tez) (storage : storage) : return =
+let give_refund (sender : address) (storage : storage) : return =
     // get caller's ledger entry and remove it from the ledger
     let (entry, ledger) : (ledger_entry option * (address, ledger_entry) big_map) = Big_map.get_and_update sender None storage.ledger in
     let (amount_to_refund, request_timestamp) = Option.unopt_with_error entry "there is no pledge to refund" in
-    match request_timestamp with
-    | None ->
+    let destination : unit contract = Tezos.get_contract_with_error sender "unreachable" in // impossible to deposit from account with bad schemea
+    match storage.status, request_timestamp with 
+    | Ongoing, None ->
         // allow withdraws after 2 hours 
         let timestamp = Tezos.get_now () + 7200 in
         let ledger_entry : ledger_entry = amount_to_refund, Some timestamp in
         let ledger = Big_map.add sender (amount_to_refund, Some timestamp) ledger in
-        [], {storage with ledger}
-    | Some timestamp ->
+        [], {storage with ledger} 
+    | Ongoing, Some timestamp -> 
       let () = if Tezos.get_now () > timestamp then () else failwith "you must wait longer before finalizing the withdraw" in
-      let destination : unit contract = Tezos.get_contract_with_error sender "unreachable" in // impossible to deposit from account with bad schemea
       let storage = {storage with ledger} in
       let tx = Tezos.transaction () amount_to_refund destination in
       [tx], storage
-
+    | Resolved_successful, _ -> failwith "refund no longer possible"
+    | Resolved_unsuccessful, _ ->
+      // Refunds are instant after the fundraiser is resolved 
+      let storage = {storage with ledger} in
+      let tx = Tezos.transaction () amount_to_refund destination in
+      [tx], storage 
+    
 let main (action : parameter) (storage : storage) : return =
   let amount = Tezos.get_amount () in
   let sender = Tezos.get_sender () in
@@ -67,26 +74,25 @@ let main (action : parameter) (storage : storage) : return =
     storage.beneficiary
     "beneficiary does not match refund schema"
   in
-  match (storage.status, action) with
-  | Ongoing, Give_pledge ->
-    // prevent folks from sending to the contract if we can't send the money back to them. 
-    let _destination : unit contract = Tezos.get_contract_with_error sender "sender does not match refund schema" in
-    let (prev_funding_amount, _) = Big_map.find_opt sender storage.ledger |> Option.value (0tz, None) in
-    let ledger = Big_map.add sender (prev_funding_amount + amount, None) storage.ledger in
-    [], {storage with ledger} 
-  | _, Give_pledge -> failwith "Give_pledgeraiser is over"
-  | Resolved_successful, Get_refund -> failwith "refund no longer possible"
-  | Resolved_unsuccessful, Get_refund -> give_refund sender amount storage
-  | Ongoing, Get_refund -> give_refund sender amount storage
-  | Ongoing, Resolve resolve_status -> 
-    let () = if sender = storage.oracle then () else failwith "only oracle can resolve" in
-    let () = if Tezos.get_now () > storage.resolution_date then () else failwith "not resolvable yet" in
-    if resolve_status then 
+  match action with
+  | Give_pledge ->
+    (match storage.status with 
+    | Ongoing ->
+      // prevent folks from sending to the contract if we can't send the money back to them. 
+      let _destination : unit contract = Tezos.get_contract_with_error sender "sender does not match refund schema" in
+      let (prev_funding_amount, _) = Big_map.find_opt sender storage.ledger |> Option.value (0tz, None) in
+      let ledger = Big_map.add sender (prev_funding_amount + amount, None) storage.ledger in
+      [], {storage with ledger}
+    | _ -> failwith "fundraising is over")
+  | Get_refund -> give_refund sender storage
+  | Resolve resolve_status ->
+    (match storage.status with 
+    | Ongoing ->
+     if resolve_status then 
       // If successful, send beneficiary all funds 
       let reward = Tezos.get_balance () in
       let tx = Tezos.transaction () reward beneficiary in
       [tx], {storage with status = Resolved_successful}
      else
-       [], {storage with status = Resolved_unsuccessful}
-  | Resolved_unsuccessful, Resolve _ -> failwith "already resolved" 
-  | _, Resolve _ -> failwith "already resolved"
+       [], {storage with status = Resolved_unsuccessful}    
+    | _ -> failwith "already resolved") 
