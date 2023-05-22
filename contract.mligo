@@ -40,33 +40,7 @@ type parameter =
 | Get_refund
 | Resolve of bool
 
-type return = operation list * storage
-
-let give_refund (sender : address) (storage : storage) : return =
-    // get caller's ledger entry and remove it from the ledger
-    let (entry, ledger) : (ledger_entry option * (address, ledger_entry) big_map) = Big_map.get_and_update sender None storage.ledger in
-    let (amount_to_refund, request_timestamp) = Option.unopt_with_error entry "there is no pledge to refund" in
-    let destination : unit contract = Tezos.get_contract_with_error sender "unreachable" in // impossible to deposit from account with bad schemea
-    match storage.status, request_timestamp with 
-    | Ongoing, None ->
-        // allow withdraws after 2 hours 
-        let timestamp = Tezos.get_now () + 7200 in
-        let ledger_entry : ledger_entry = amount_to_refund, Some timestamp in
-        let ledger = Big_map.add sender (amount_to_refund, Some timestamp) ledger in
-        [], {storage with ledger} 
-    | Ongoing, Some timestamp -> 
-      let () = if Tezos.get_now () > timestamp then () else failwith "you must wait longer before finalizing the withdraw" in
-      let storage = {storage with ledger} in
-      let tx = Tezos.transaction () amount_to_refund destination in
-      [tx], storage
-    | Resolved_successful, _ -> failwith "refund no longer possible"
-    | Resolved_unsuccessful, _ ->
-      // Refunds are instant after the fundraiser is resolved 
-      let storage = {storage with ledger} in
-      let tx = Tezos.transaction () amount_to_refund destination in
-      [tx], storage 
-    
-let main (action : parameter) (storage : storage) : return =
+let main (action : parameter) (storage : storage) : operation list * storage =
   let amount = Tezos.get_amount () in
   let sender = Tezos.get_sender () in
   // short-circuit the entire thing if the beneficiary is not right
@@ -84,7 +58,28 @@ let main (action : parameter) (storage : storage) : return =
       let ledger = Big_map.add sender (prev_funding_amount + amount, None) storage.ledger in
       [], {storage with ledger}
     | _ -> failwith "fundraising is over")
-  | Get_refund -> give_refund sender storage
+  | Get_refund -> // get caller's ledger entry and remove it from the ledger
+    let (entry, ledger) : (ledger_entry option * (address, ledger_entry) big_map) = Big_map.get_and_update sender None storage.ledger in
+    let (amount_to_refund, request_timestamp) = Option.unopt_with_error entry "there is no pledge to refund" in
+    let destination : unit contract = Tezos.get_contract_with_error sender "unreachable" in // impossible to deposit from account with bad schemea
+    (match storage.status, request_timestamp with 
+    | Ongoing, None ->
+        // allow withdraws after 2 hours 
+        let timestamp = Tezos.get_now () + 7200 in
+        let ledger_entry : ledger_entry = amount_to_refund, Some timestamp in
+        let ledger = Big_map.add sender (amount_to_refund, Some timestamp) ledger in
+        [], {storage with ledger} 
+    | Ongoing, Some timestamp -> 
+      let () = if Tezos.get_now () > timestamp then () else failwith "you must wait longer before finalizing the withdraw" in
+      let storage = {storage with ledger} in
+      let tx = Tezos.transaction () amount_to_refund destination in
+      [tx], storage
+    | Resolved_successful, _ -> failwith "refund no longer possible"
+    | Resolved_unsuccessful, _ ->
+      // Refunds are instant after the fundraiser is resolved 
+      let storage = {storage with ledger} in
+      let tx = Tezos.transaction () amount_to_refund destination in
+      [tx], storage)
   | Resolve resolve_status ->
     (match storage.status with 
     | Ongoing ->
