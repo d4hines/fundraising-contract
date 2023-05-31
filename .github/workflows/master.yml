@@ -28,5 +28,5 @@ jobs:
  
       - name: Build and run Ligo test
         run: |
-          nix develop --command "ligo run test ./test.mligo"
+          nix develop --command ligo run test ./test/test.mligo
  

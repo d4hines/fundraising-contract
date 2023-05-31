@@ -1,2 +1,5 @@
 .direnv
 .ligo
+
+contract.tz
+storage.mligo

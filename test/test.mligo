@@ -1,5 +1,5 @@
-#include "contract.mligo"
-#include "test_utils.mligo"
+#include "../src/contract.mligo"
+#include "./test_utils.mligo"
 
 // reset state
 let reset_state () =
