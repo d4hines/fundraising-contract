@@ -40,7 +40,7 @@ type parameter =
 | Get_refund
 | Resolve of bool
 
-let main (action : parameter) (storage : storage) : operation list * storage =
+let main (action, storage : parameter * storage) : operation list * storage =
   let amount = Tezos.get_amount () in
   let sender = Tezos.get_sender () in
   // short-circuit the entire thing if the beneficiary is not right
@@ -66,7 +66,6 @@ let main (action : parameter) (storage : storage) : operation list * storage =
     | Ongoing, None ->
         // allow withdraws after 2 hours 
         let timestamp = Tezos.get_now () + 7200 in
-        let ledger_entry : ledger_entry = amount_to_refund, Some timestamp in
         let ledger = Big_map.add sender (amount_to_refund, Some timestamp) ledger in
         [], {storage with ledger} 
     | Ongoing, Some timestamp -> 
