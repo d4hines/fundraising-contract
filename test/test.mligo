@@ -71,6 +71,7 @@ let test_get_refund_before_resolution () =
     let () = assert_equal_poly "contract should have no tez left" contract_balance 0tz in
     ()
 
+// BCD mainnet results: https://better-call.dev/mainnet/opg/oon2AFFMENLX3MD3RacusJoMYi5eBBkHrzJQqJZPTx4nDMkE8CR/contents
 let test_beneficiary_gets_tez_after_resolve_true () = 
     let (beneficiary, oracle, pledger1, pledger2, taddr) = reset_state () in
     let contract_addr = Test.to_contract taddr |> Tezos.address in
