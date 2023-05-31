@@ -15,7 +15,6 @@ let reset_state () =
         oracle = oracle;
         beneficiary = beneficiary;
         status = Ongoing; 
-        resolution_date = Tezos.get_now () + 3600; // one hour from now
     } in
     let () = Test.set_source faucet in 
     let taddr, _, _ = Test.originate_uncurried main initial_storage 0tz in 

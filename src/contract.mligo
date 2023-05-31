@@ -6,14 +6,14 @@
 // The public can pledge money (tez) towards this commitment via
 // the [%give_pledge] entrypoint.
 //
-// At any point after the [%resolution_date], some oracle (ideally
+// At any point some oracle (ideally
 // a credibly-neutral third party), can resolve the fundraiser as
 // successful or unsuccessful.
 //
 // If successful, all funds are immediately transferred to the beneficiary.
 //
 // After an unsuccessful resolution, or at any point before the
-// resolution date, users can get a refund for their pledge.
+// resolution, users can get a refund for their pledge.
 //
 // To prevent griefing the beneficiary, refunds before the resolution
 // are on a 2 hour delay: first call to %get_refund initiates the timer,
@@ -32,7 +32,6 @@ type storage = {
     oracle: address;
     beneficiary: address;
     status: status;
-    resolution_date: timestamp
 } 
 
 type parameter = 
