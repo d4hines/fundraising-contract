@@ -15,6 +15,7 @@ let reset_state () =
         oracle = oracle;
         beneficiary = beneficiary;
         status = Ongoing; 
+        resolution_date = Tezos.get_now () + 3600; // one hour from now
     } in
     let () = Test.set_source faucet in 
     let taddr, _, _ = Test.originate_uncurried main initial_storage 0tz in 
@@ -71,7 +72,6 @@ let test_get_refund_before_resolution () =
     let () = assert_equal_poly "contract should have no tez left" contract_balance 0tz in
     ()
 
-// BCD mainnet results: https://better-call.dev/mainnet/opg/oon2AFFMENLX3MD3RacusJoMYi5eBBkHrzJQqJZPTx4nDMkE8CR/contents
 let test_beneficiary_gets_tez_after_resolve_true () = 
     let (beneficiary, oracle, pledger1, pledger2, taddr) = reset_state () in
     let contract_addr = Test.to_contract taddr |> Tezos.address in
@@ -85,6 +85,8 @@ let test_beneficiary_gets_tez_after_resolve_true () =
     let () = assert_equal_poly "pledger1 pledge is incorrect" pledger1_pledge_balance 5tz in
     let (pledger2_pledge_balance, _) = Big_map.find_opt pledger2 storage.ledger |> Option.unopt in 
     let () = assert_equal_poly "pledger2 pledge is incorrect" pledger2_pledge_balance 3tz in
+    // bake until some time after the resolution date
+    let () = Test.bake_until_n_cycle_end 300n in 
     let _storage = call_as_exn oracle (Resolve true) 0tz taddr in
     // contract should hold no tez after resolve true
     let contract_balance = Test.get_balance contract_addr in
@@ -104,6 +106,8 @@ let test_get_refund_after_resolution_false () =
     let pledger2_amount = 3tz in
     let _storage = call_as_exn pledger1 Give_pledge pledger1_amount taddr in
     let _storage = call_as_exn pledger2 Give_pledge pledger2_amount taddr in
+    // bake until some time after the resolution date
+    let () = Test.bake_until_n_cycle_end 300n in 
     let _storage = call_as_exn oracle (Resolve false) 0tz taddr in
     let _storage = call_as_exn pledger1 Get_refund 0tz taddr in 
     let _storage = call_as_exn pledger2 Get_refund 0tz taddr in
@@ -118,6 +122,12 @@ let test_get_refund_after_resolution_false () =
     let () = assert_with_error (diff < fees_upper_bound) "user should get all funds back minus tx fees" in 
     () 
 
+let test_resolve_before_resolution_date () =
+    let (_beneficiary, oracle, _pledger1, _pledger2, taddr) = reset_state () in
+    let () = call_as_and_expect "cannot resolve before resolution date" oracle (Resolve false) 0tz taddr in
+    ()
+
 let () = test_get_refund_before_resolution ()
 let () = test_beneficiary_gets_tez_after_resolve_true ()
 let () = test_get_refund_after_resolution_false ()
+let () = test_resolve_before_resolution_date ()

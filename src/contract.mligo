@@ -6,14 +6,14 @@
 // The public can pledge money (tez) towards this commitment via
 // the [%give_pledge] entrypoint.
 //
-// At any point some oracle (ideally
+// At any point after the [%resolution_date], some oracle (ideally
 // a credibly-neutral third party), can resolve the fundraiser as
 // successful or unsuccessful.
 //
 // If successful, all funds are immediately transferred to the beneficiary.
 //
 // After an unsuccessful resolution, or at any point before the
-// resolution, users can get a refund for their pledge.
+// resolution date, users can get a refund for their pledge.
 //
 // To prevent griefing the beneficiary, refunds before the resolution
 // are on a 2 hour delay: first call to %get_refund initiates the timer,
@@ -32,6 +32,7 @@ type storage = {
     oracle: address;
     beneficiary: address;
     status: status;
+    resolution_date: timestamp
 } 
 
 type parameter = 
@@ -80,6 +81,11 @@ let main (action, storage : parameter * storage) : operation list * storage =
       let tx = Tezos.transaction () amount_to_refund destination in
       [tx], storage)
   | Resolve resolve_status ->
+    // prevent oracle from catching pledgers off-guard and locking
+    // their funds.
+    if Tezos.get_now () < storage.resolution_date then
+      failwith "cannot resolve before resolution date"
+    else
     (match storage.status with 
     | Ongoing ->
      if resolve_status then 
