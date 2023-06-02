@@ -1,8 +1,13 @@
 #include "../src/contract.mligo"
 #include "./test_utils.mligo"
 
-// reset state
-let reset_state () =
+
+// Scenarios:
+let default_init (_pledger1 : address ) (_pledger2 : address) = 
+    let ledger : (address, ledger_entry) big_map = Big_map.empty in
+    0tz, Funding, ledger
+
+let reset_state init_fn =
     let _ = Test.reset_state  5n ([4000000tz; 100tz; 100tz; 100tez; 100tez;] : tez list) in
     let faucet = Test.nth_bootstrap_account 0 in
     let _ = Test.set_baker faucet in
@@ -10,18 +15,20 @@ let reset_state () =
     let oracle : address = Test.nth_bootstrap_account 2 in
     let pledger1 : address = Test.nth_bootstrap_account 3 in
     let pledger2 : address = Test.nth_bootstrap_account 4 in
+    let (amount, status, ledger) = init_fn pledger1 pledger2 in
     let initial_storage : storage = {
-        ledger = (Big_map.empty : (address, ledger_entry) big_map );
-        oracle = oracle;
-        beneficiary = beneficiary;
-        status = Funding; 
+        ledger;
+        status;
+        oracle;
+        beneficiary;
+        resolution_period = 3600;
     } in
     let () = Test.set_source faucet in 
-    let taddr, _, _ = Test.originate_uncurried main initial_storage 0tz in 
+    let taddr, _, _ = Test.originate_uncurried main initial_storage amount in 
     (beneficiary, oracle, pledger1, pledger2, taddr) 
 
 let test_get_refund_before_commit () = 
-    let (_beneficiary, _oracle, pledger1, pledger2, taddr) = reset_state () in
+    let (_beneficiary, _oracle, pledger1, pledger2, taddr) = reset_state default_init in
     let original_pledger1_balance = Test.get_balance pledger1 in
     let original_pledger2_balance = Test.get_balance pledger2 in
     // give pledger1's pledge
@@ -41,7 +48,7 @@ let test_get_refund_before_commit () =
     let () = call_as_and_expect "you must wait longer before finalizing the withdraw" pledger2 Get_refund 0tz taddr in
     let post_transfer_pledger1_balance = Test.get_balance pledger1 in
     let post_transfer_pledger2_balance = Test.get_balance pledger2 in
-    let () = Test.bake_until_n_cycle_end 300n in 
+    let () = Test.bake_until_n_cycle_end 100n in 
     let post_bake_pledger1_balance = Test.get_balance pledger1 in
     let post_bake_pledger2_balance = Test.get_balance pledger2 in 
     let pledger1_baking_rewards = post_bake_pledger1_balance - post_transfer_pledger1_balance |> Option.unopt in 
@@ -67,7 +74,7 @@ let test_get_refund_before_commit () =
     ()
 
 let test_beneficiary_gets_tez_after_resolve_true () = 
-    let (beneficiary, oracle, pledger1, pledger2, taddr) = reset_state () in
+    let (beneficiary, oracle, pledger1, pledger2, taddr) = reset_state default_init in
     let contract_addr = Test.to_contract taddr |> Tezos.address in
     let pledger1_amount = 5tz in
     let pledger2_amount = 3tz in
@@ -79,8 +86,7 @@ let test_beneficiary_gets_tez_after_resolve_true () =
     let () = assert_equal_poly "pledger1 pledge is incorrect" pledger1_pledge_balance 5tz in
     let (pledger2_pledge_balance, _) = Big_map.find_opt pledger2 storage.ledger |> Option.unopt in 
     let () = assert_equal_poly "pledger2 pledge is incorrect" pledger2_pledge_balance 3tz in
-    let one_hour_from_now = Tezos.get_now ()  + 3600 in
-    let _storage = call_as_exn beneficiary (Commit one_hour_from_now) 0tz taddr in
+    let _storage = call_as_exn beneficiary Commit 0tz taddr in
     let benficiary_pre_resolution_balance = Test.get_balance beneficiary in
     // bake until some time after the resolution date
     let () = Test.bake_until_n_cycle_end 300n in 
@@ -95,7 +101,7 @@ let test_beneficiary_gets_tez_after_resolve_true () =
     ()
  
 let test_get_refund_after_resolution_false () = 
-    let (beneficiary, oracle, pledger1, pledger2, taddr) = reset_state () in
+    let (beneficiary, oracle, pledger1, pledger2, taddr) = reset_state default_init in
     let original_pledger1_balance = Test.get_balance pledger1 in 
     let original_pledger2_balance = Test.get_balance pledger2 in 
     // give pledger1's pledge
@@ -103,8 +109,7 @@ let test_get_refund_after_resolution_false () =
     let pledger2_amount = 3tz in
     let _storage = call_as_exn pledger1 Give_pledge pledger1_amount taddr in
     let _storage = call_as_exn pledger2 Give_pledge pledger2_amount taddr in
-    let one_hour_from_now = Tezos.get_now ()  + 3600 in
-    let _storage = call_as_exn beneficiary (Commit one_hour_from_now) 0tz taddr in
+    let _storage = call_as_exn beneficiary Commit 0tz taddr in
     // bake until some time after the resolution date
     let () = Test.bake_until_n_cycle_end 300n in 
     let _storage = call_as_exn oracle (Resolve false) 0tz taddr in
@@ -122,19 +127,52 @@ let test_get_refund_after_resolution_false () =
     () 
 
 let test_cant_resolve_before_correct_time () =
-    let (beneficiary, oracle, pledger1, _pledger2, taddr) = reset_state () in
-    let () = call_as_and_expect "not a resolvable stage" oracle (Resolve false) 0tz taddr in
-    let () = call_as_and_expect "not a resolvable stage" pledger1 (Resolve false) 0tz taddr in
-    let one_hour_from_now = Tezos.get_now ()  + 3600 in
-    let _storage = call_as_exn beneficiary (Commit one_hour_from_now) 0tz taddr in
+    let (beneficiary, oracle, pledger1, _pledger2, taddr) = reset_state default_init in
+    let () = call_as_and_expect "cannot resolve the contract before it is locked" oracle (Resolve false) 0tz taddr in
+    let () = call_as_and_expect "cannot resolve the contract before it is locked" pledger1 (Resolve false) 0tz taddr in
+    let _storage = call_as_exn beneficiary Commit 0tz taddr in
     let () = Test.bake_until_n_cycle_end 100n in 
-    let () = call_as_and_expect "only oracle can resolve until a week after resolution period is over" pledger1 (Resolve false) 0tz taddr in
+    let () = call_as_and_expect "only oracle can resolve until a week after the resolution date" pledger1 (Resolve false) 0tz taddr in
     let () = Test.bake_until_n_cycle_end 3360n in 
     let storage = call_as_exn pledger1 (Resolve true) 0tz taddr in
     let () = assert_equal_poly "resolution should be unsuccessful regardless of input after 1 week" storage.status Resolved_unsuccessful in
+    ()
+
+// Properties
+
+let test_amount_in_contract_always_equals_sum_of_pledges () =
+    let (_beneficiary, _oracle, pledger1, _pledger2, taddr) = reset_state default_init in
+    let amount_1 = 5tz in
+    let storage = call_as_exn pledger1 Give_pledge amount_1 taddr in
+    let (pledger1_pledge_balance, _) = Big_map.find_opt pledger1 storage.ledger |> Option.unopt in
+    let () = assert_with_error (pledger1_pledge_balance = amount_1) "pledger1 balance is incorrect" in
+    let amount_2 = 3tz in
+    let storage = call_as_exn pledger1 Give_pledge amount_2 taddr in
+    let (pledger1_pledge_balance, _) = Big_map.find_opt pledger1 storage.ledger |> Option.unopt in
+    let () = assert_with_error (pledger1_pledge_balance = amount_1 + amount_2) "pledger1 balance is incorrect" in 
+    ()
+
+let test_amount_refunded_always_equals_amount_in_contract () =
+    let (_beneficiary, _oracle, pledger1, _pledger2, taddr) =
+        reset_state (fun pledger1 _pledger2 ->
+            let ledger : (address, ledger_entry) big_map = Big_map.empty in
+            let a_long_time_from_now = Tezos.get_now () + 1000000000 in
+            let pledger1_entry : ledger_entry = (100tz, Some a_long_time_from_now) in
+            let ledger = Big_map.add pledger1 pledger1_entry ledger in
+            (200tz, Resolved_unsuccessful, ledger)
+        ) in
+    let initial_pledger1_balance = Test.get_balance pledger1 in
+    let _storage = call_as_exn pledger1 Get_refund 0tz taddr in
+    let final_pledger1_balance = Test.get_balance pledger1 in
+    let fees_upper_bound = 1.02tz in // 1tez per tx + gas/storage
+    let diff = (initial_pledger1_balance + 100tz) - final_pledger1_balance |> Option.unopt in
+    let () = assert_with_error (diff < fees_upper_bound) "user should get all funds back minus tx fees" in
     ()
 
 let () = test_get_refund_before_commit ()
 let () = test_beneficiary_gets_tez_after_resolve_true ()
 let () = test_get_refund_after_resolution_false ()
 let () = test_cant_resolve_before_correct_time ()
+
+let () = test_amount_in_contract_always_equals_sum_of_pledges ()
+let () = test_amount_refunded_always_equals_amount_in_contract ()

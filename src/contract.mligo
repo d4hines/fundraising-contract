@@ -10,7 +10,8 @@
 // the [%give_pledge] entrypoint.
 //
 // At any point, the beneficiary can commit to doing the work.
-// Pledgers funds are locked until after the resolution date.
+// Pledgers funds are locked until after the resolution date
+// which is the time of the commit plus the resolution period.
 //
 // At any point after the resolution date, some oracle (ideally
 // a credibly-neutral third party), can resolve the commitment as
@@ -42,10 +43,11 @@ type storage = {
     oracle: address;
     beneficiary: address;
     status: status;
+    resolution_period : int; // in seconds
 } 
 
 type parameter = 
-| Commit of timestamp
+| Commit
 | Give_pledge
 | Get_refund
 | Resolve of bool
@@ -84,32 +86,46 @@ let main (action, storage : parameter * storage) : operation list * storage =
       let storage = {storage with ledger} in
       let tx = Tezos.transaction () amount_to_refund destination in
       [tx], storage
-    | Locked _timestamp, _ -> failwith "refund not possible until resolution"
+    | Locked _timestamp, _ -> failwith "refund not possible until after resolution"
     | Resolved_successful, _ -> failwith "refund no longer possible"
     | Resolved_unsuccessful, _ ->
       // Refunds are instant after the fundraiser is resolved 
       let storage = {storage with ledger} in
       let tx = Tezos.transaction () amount_to_refund destination in
       [tx], storage)
-  | Commit resolution_date ->
+  | Commit ->
     (match storage.status with
-    | Funding -> [], {storage with status = Locked resolution_date}
+    | Funding ->
+      let resolution_date = (Tezos.get_now ()) + storage.resolution_period in
+      [], {storage with status = Locked resolution_date }
     | _ -> failwith "invalid commit")
   | Resolve resolve_status -> 
     (match storage.status with
     | Locked resolution_date ->
       let now = Tezos.get_now () in
-      let () = assert_with_error (now > resolution_date) "cannot resolve until after resolution period" in
+      let () = assert_with_error (now > resolution_date) "cannot resolve until after resolution date" in
       let seven_days = 604800 in
       if now > (resolution_date + seven_days) then
         [], {storage with status = Resolved_unsuccessful}
       else
-        let () = assert_with_error ((Tezos.get_sender ()) = storage.oracle) "only oracle can resolve until a week after resolution period is over" in
+        let () = assert_with_error ((Tezos.get_sender ()) = storage.oracle) "only oracle can resolve until a week after the resolution date" in
         (if resolve_status then 
-          //If successful, send beneficiary all funds 
+          // If successful, send beneficiary all funds 
           let reward = Tezos.get_balance () in
           let tx = Tezos.transaction () reward beneficiary in
           [tx], {storage with status = Resolved_successful}
         else
           [], {storage with status = Resolved_unsuccessful})
-    | _ -> failwith "not a resolvable stage")
+    | _ -> failwith "cannot resolve the contract before it is locked")
+
+// properties that should hold:
+// - Final status of the contract should always eventually be Funding | Resolved_successful | Resolved_unsuccessful
+// - if the final status is Resolved_successful, beneficiary should get all the money.
+// - if the final status is Funding or Resolved_unsuccessful, users should be able get back all their money
+// - only the oracle can resolve successful
+// - if we ever hit the Locked stage, the contract always eventually moves to Resolved_successful or Resolved_unsuccessful
+//   - No one can resolve before the resolution date
+//   - before the resolution date + a week, only the oracle can resolve
+//   - after the resolution date + a week, anyone can resolve unsuccessful
+// - Everyone should be able to get their money back while in the funding phase (on a 2 hour delay)
+//     - if you pledge and the beneficiary commits and you decide you want a refund, tough.
