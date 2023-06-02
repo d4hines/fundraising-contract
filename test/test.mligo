@@ -131,6 +131,7 @@ let test_cant_resolve_before_correct_time () =
     let () = call_as_and_expect "cannot resolve the contract before it is locked" oracle (Resolve false) 0tz taddr in
     let () = call_as_and_expect "cannot resolve the contract before it is locked" pledger1 (Resolve false) 0tz taddr in
     let _storage = call_as_exn beneficiary Commit 0tz taddr in
+    let () = call_as_and_expect "cannot resolve until after resolution date" oracle (Resolve false) 0tz taddr in
     let () = Test.bake_until_n_cycle_end 100n in 
     let () = call_as_and_expect "only oracle can resolve until a week after the resolution date" pledger1 (Resolve false) 0tz taddr in
     let () = Test.bake_until_n_cycle_end 3360n in 
