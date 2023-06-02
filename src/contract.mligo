@@ -27,9 +27,9 @@
 // and the next call after the delay performs the refund.
 // After resolution, refunds are always instantaneous.
 //
-// If the oracle fails to resolve the commitment within 7 days after
-// the resolution period, anyone can resolve the fundraiser as
-// unsuccessful.
+// After the resolution date, if the oracle fails to resolve the
+// commitment within a period known as the oracle timeout, anyone can resolve
+// the fundraiser as unsuccessful.
 type status = 
 | Funding
 | Locked of timestamp
@@ -44,6 +44,7 @@ type storage = {
     beneficiary: address;
     status: status;
     resolution_period : int; // in seconds
+    oracle_timeout : int; // in seconds
 } 
 
 type parameter = 
@@ -105,8 +106,7 @@ let main (action, storage : parameter * storage) : operation list * storage =
     | Locked resolution_date ->
       let now = Tezos.get_now () in
       let () = assert_with_error (now > resolution_date) "cannot resolve until after resolution date" in
-      let seven_days = 604800 in
-      if now > (resolution_date + seven_days) then
+      if now > (resolution_date + storage.oracle_timeout) then
         [], {storage with status = Resolved_unsuccessful}
       else
         let () = assert_with_error ((Tezos.get_sender ()) = storage.oracle) "only oracle can resolve until a week after the resolution date" in

@@ -22,6 +22,7 @@ let reset_state init_fn =
         oracle;
         beneficiary;
         resolution_period = 3600;
+        oracle_timeout = 604800; 
     } in
     let () = Test.set_source faucet in 
     let taddr, _, _ = Test.originate_uncurried main initial_storage amount in 
