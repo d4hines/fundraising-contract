@@ -57,7 +57,8 @@ let main (action, storage : parameter * storage) : operation list * storage =
       let ledger = Big_map.add sender (prev_funding_amount + amount, None) storage.ledger in
       [], {storage with ledger}
     | _ -> failwith "fundraising is over")
-  | Get_refund -> // get caller's ledger entry and remove it from the ledger
+  | Get_refund -> 
+    // get caller's ledger entry and remove it from the ledger
     let (entry, ledger) : (ledger_entry option * (address, ledger_entry) big_map) = Big_map.get_and_update sender None storage.ledger in
     let (amount_to_refund, request_timestamp) = Option.unopt_with_error entry "there is no pledge to refund" in
     let destination : unit contract = Tezos.get_contract_with_error sender "unreachable" in // impossible to deposit from account with bad schemea
