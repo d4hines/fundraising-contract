@@ -169,10 +169,25 @@ let test_amount_refunded_always_equals_amount_in_contract () =
     let () = assert_with_error (diff < fees_upper_bound) "user should get all funds back minus tx fees" in
     ()
 
+let test_only_beneficiary_can_commit () =
+    let (_beneficiary, _oracle, pledger1, _pledger2, taddr) = reset_state default_init in
+    let () = call_as_and_expect "only the beneficiary can commit" pledger1 Commit 0tz taddr in
+    ()
+ 
+let test_can_only_commit_during_funding () =
+    let (beneficiary, _oracle, _pledger1, _pledger2, taddr) = reset_state default_init in
+    let _storage = call_as_exn beneficiary Commit 0tz taddr in
+    let () = call_as_and_expect "invalid commit" beneficiary Commit 0tz taddr in
+    ()
+
 let () = test_get_refund_before_commit ()
 let () = test_beneficiary_gets_tez_after_resolve_true ()
 let () = test_get_refund_after_resolution_false ()
 let () = test_cant_resolve_before_correct_time ()
-
+let () = test_beneficiary_gets_tez_after_resolve_true ()
+let () = test_get_refund_after_resolution_false ()
+let () = test_cant_resolve_before_correct_time ()
 let () = test_amount_in_contract_always_equals_sum_of_pledges ()
 let () = test_amount_refunded_always_equals_amount_in_contract ()
+let () = test_only_beneficiary_can_commit ()
+let () = test_can_only_commit_during_funding ()

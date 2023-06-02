@@ -94,6 +94,7 @@ let main (action, storage : parameter * storage) : operation list * storage =
       let tx = Tezos.transaction () amount_to_refund destination in
       [tx], storage)
   | Commit ->
+    let () = assert_with_error ((Tezos.get_sender ()) = storage.beneficiary) "only the beneficiary can commit" in
     (match storage.status with
     | Funding ->
       let resolution_date = (Tezos.get_now ()) + storage.resolution_period in
