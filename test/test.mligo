@@ -21,6 +21,7 @@ let reset_state init_fn =
         status;
         oracle;
         beneficiary;
+        refund_lock_period = 7200; 
         resolution_period = 3600;
         oracle_timeout = 604800; 
     } in

@@ -23,7 +23,7 @@
 // beneficiary commits, users can get a refund for their pledge.
 //
 // To prevent griefing the beneficiary, refunds before commitment
-// are on a 2 hour delay: first call to %get_refund initiates the timer,
+// are on a configurable delay: first call to %get_refund initiates the timer,
 // and the next call after the delay performs the refund.
 // After resolution, refunds are always instantaneous.
 //
@@ -43,6 +43,7 @@ type storage = {
     oracle: address;
     beneficiary: address;
     status: status;
+    refund_lock_period: int; // in seconds 
     resolution_period : int; // in seconds
     oracle_timeout : int; // in seconds
 } 
@@ -79,7 +80,7 @@ let main (action, storage : parameter * storage) : operation list * storage =
     (match storage.status, request_timestamp with 
     | Funding, None ->
         // allow withdraws after 2 hours 
-        let timestamp = Tezos.get_now () + 7200 in
+        let timestamp = Tezos.get_now () + storage.refund_lock_period in
         let ledger = Big_map.add sender (amount_to_refund, Some timestamp) ledger in
         [], {storage with ledger} 
     | Funding, Some timestamp -> 
